@@ -1,0 +1,58 @@
+name: Deploy sabeq.legal
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get sabeq-legal from Q8-ux/saad
+        uses: actions/checkout@v4
+        with:
+          repository: Q8-ux/saad
+          path: saad
+          sparse-checkout: sabeq-legal
+          sparse-checkout-cone-mode: true
+      - name: Build site
+        run: |
+          set -e
+          SRC=saad/sabeq-legal
+          mkdir -p _site/saad/sabeq-legal
+          cp -a "$SRC"/. _site/
+          cp -a "$SRC"/. _site/saad/sabeq-legal/
+          rm -rf _site/saad/sabeq-legal/android _site/android
+          # Treat sabeq.legal like the GitHub Pages host so API and image paths resolve
+          find _site -name '*.js' -path '*assets*' -print0 | xargs -0 sed -i \
+            's/window\.location\.hostname===ut}/(window.location.hostname===ut||window.location.hostname.endsWith(`sabeq.legal`))}/g'
+          sed -i 's#https://q8-ux.github.io/saad/sabeq-legal/"#https://www.sabeq.legal/"#' _site/index.html
+          cp _site/index.html _site/404.html
+          echo "www.sabeq.legal" > _site/CNAME
+          touch _site/.nojekyll
+          echo "patched: $(grep -l 'endsWith(`sabeq.legal`)' _site/assets/*.js | wc -l)"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
